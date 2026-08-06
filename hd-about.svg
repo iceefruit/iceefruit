@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="620" height="30" viewBox="0 0 620 30" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace">
+  <style>
+    .a { fill: #6e7681; font-weight: 600; font-size: 16px; }
+    @media (prefers-color-scheme: dark) { .a { fill: #c9d1d9; } }
+  </style>
+  <text x="0" y="22" class="a">about</text>
+</svg>

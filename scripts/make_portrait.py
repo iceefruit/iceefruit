@@ -1,0 +1,89 @@
+import argparse
+import sys
+import cv2
+import numpy as np
+from PIL import Image
+
+RAMP = " .`:-=+*cs#%@"     # bright/sparse → dark/dense
+COLS = 90                   
+CLAHE_CLIP = 3.0            
+GAMMA = 1.0                 
+CURVE = 1.7                 
+ROW_RATIO = 0.48            
+
+FG_LIGHT = "#6e7681"        
+FG_DARK  = "#c9d1d9"        
+CHAR_W   = 7.74             
+FONT_SIZE = 12.9
+LINE_H   = 15
+ROW_DELAY = 0.09            
+FAMILY = "ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
+
+def prep(path, crop=None):
+    # The original drawing has a black background and white lines.
+    # To match the RAMP characters properly, we invert the image.
+    src = Image.open(path).convert("L")
+    gray = 255 - np.array(src)
+    
+    gray = cv2.bilateralFilter(gray, 11, 50, 50)       
+    gray = cv2.createCLAHE(clipLimit=CLAHE_CLIP, tileGridSize=(8, 8)).apply(gray)
+    gray = (255.0 * (gray / 255.0) ** CURVE).astype("uint8")
+    
+    return Image.fromarray(gray)
+
+def to_lines(img, cols=COLS, gamma=GAMMA):
+    w, h = img.size
+    rows = int(cols * (h / w) * ROW_RATIO)
+    img  = img.resize((cols, rows), Image.LANCZOS)
+    px   = list(img.getdata())
+    n    = len(RAMP)
+
+    out = []
+    for r in range(rows):
+        out.append("".join(
+            RAMP[min(n - 1, int((1 - px[r * cols + c] / 255.0) ** gamma * n))]
+            for c in range(cols)
+        ).rstrip())
+
+    while out and not out[0].strip():
+        out.pop(0)
+    while out and not out[-1].strip():
+        out.pop()
+    return out
+
+def build_svg(lines, cols=COLS):
+    pad    = 14
+    width  = int(cols * CHAR_W + pad * 2)
+    height = len(lines) * LINE_H + pad * 2
+
+    p = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" font-family="{FAMILY}">',
+         f'<style>.a{{fill:{FG_LIGHT}}}@media(prefers-color-scheme:dark){{.a{{fill:{FG_DARK}}}}}</style>']
+
+    for i, line in enumerate(lines):
+        y     = pad + i * LINE_H
+        begin = f"{i * ROW_DELAY:.2f}s"
+        end   = f"{(i + 1) * ROW_DELAY:.2f}s"
+        w     = max(len(line), 1) * CHAR_W
+        safe  = (line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+
+        p.append(f'<clipPath id="c{i}"><rect x="{pad}" y="{y}" height="{LINE_H}" width="0"><animate attributeName="width" from="0" to="{w:.1f}" begin="{begin}" dur="{ROW_DELAY}s" fill="freeze"/></rect></clipPath>')
+        p.append(f'<g clip-path="url(#c{i})"><text xml:space="preserve" x="{pad}" y="{y + 11.2:.1f}" class="a" font-size="{FONT_SIZE}">{safe}</text></g>')
+        p.append(f'<rect y="{y + 1}" width="6" height="12" class="a" opacity="0"><animate attributeName="x" from="{pad}" to="{pad + w:.1f}" begin="{begin}" dur="{ROW_DELAY}s" fill="freeze"/><set attributeName="opacity" to="0.8" begin="{begin}"/><set attributeName="opacity" to="0" begin="{end}"/></rect>')
+
+    p.append("</svg>")
+    return "".join(p)
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("photo")
+    ap.add_argument("out", nargs="?", default="ascii.svg")
+    ap.add_argument("--cols", type=int, default=COLS)
+    args = ap.parse_args()
+
+    lines = to_lines(prep(args.photo), cols=args.cols)
+    with open(args.out, "w", encoding="utf-8") as f:
+        f.write(build_svg(lines, cols=args.cols))
+    print(f"wrote {args.out} — {len(lines)} rows, {args.cols} columns")
+
+if __name__ == "__main__":
+    main()
